@@ -4,15 +4,14 @@ Precompute top-K nearest neighbors for all firms (full 768-dim cosine).
 Generates a compact JSON file for the static GitHub Pages site.
 
 Run on UCloud:
-    python scripts/precompute_neighbors.py
+    python3 precompute_neighbors.py
 
-Input (from TBIC-MA-NO project):
-    data/processed/embeddings_normed.npy       (420K x 768 L2-normalized)
-    data/processed/embeddings_orgnr_order.npy
-    data/processed/semantic_map_payload.json.gz (for orgnr ordering)
+Input:
+    /work/TBIC-MA-NO/data/processed/embeddings.parquet
+    /work/TBIC-MA-NO/data/processed/semantic_map_payload.json.gz
 
 Output:
-    neighbors.json.gz  (in current working directory)
+    /work/TBIC-MA-NO/data/processed/neighbors.json.gz
 """
 
 from __future__ import annotations
@@ -22,18 +21,23 @@ import json
 import time
 
 import numpy as np
+import pandas as pd
 
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Paths — adjust TBIC_DATA to where the TBIC project's processed data lives
+# Paths — try /work mount first, fallback to drive path
 # ---------------------------------------------------------------------------
-TBIC_DATA = Path("/work/TBIC-MA-NO/data/processed")
+for _candidate in [Path("/work/TBIC-MA-NO"), Path("/1097013/TBIC-MA-NO")]:
+    if (_candidate / "data" / "processed").exists():
+        DATA_DIR = _candidate / "data" / "processed"
+        break
+else:
+    DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "processed"
 
-EMB_NORMED_PATH = TBIC_DATA / "embeddings_normed.npy"
-EMB_ORGNR_PATH = TBIC_DATA / "embeddings_orgnr_order.npy"
-PAYLOAD_PATH = TBIC_DATA / "semantic_map_payload.json.gz"
-OUTPUT_PATH = Path("neighbors.json.gz")
+EMBEDDINGS_PATH = DATA_DIR / "embeddings.parquet"
+PAYLOAD_PATH = DATA_DIR / "semantic_map_payload.json.gz"
+OUTPUT_PATH = DATA_DIR / "neighbors.json.gz"
 
 K = 10
 BATCH_SIZE = 200
@@ -45,19 +49,31 @@ def main() -> None:
     def progress(msg: str) -> None:
         print(f"[{time.time() - t0:7.1f}s] {msg}", flush=True)
 
+    progress(f"Data directory: {DATA_DIR}")
+
     # Load payload to get orgnr ordering (this is the frontend's row index)
     progress("Loading payload for orgnr ordering")
-    payload = json.loads(gzip.decompress(Path(PAYLOAD_PATH).read_bytes()))
+    payload = json.loads(gzip.decompress(PAYLOAD_PATH.read_bytes()))
     payload_orgnrs = payload["orgnr"]
     n_payload = payload["n"]
     progress(f"Payload: {n_payload:,} firms")
 
-    # Load normalized embeddings
-    progress("Loading normalized embeddings")
-    emb_normed = np.load(EMB_NORMED_PATH)
-    emb_orgnrs = np.load(EMB_ORGNR_PATH, allow_pickle=True)
-    n_emb = emb_normed.shape[0]
-    progress(f"Embeddings: {n_emb:,} x {emb_normed.shape[1]}")
+    # Load embeddings from parquet
+    progress("Loading embeddings.parquet")
+    emb_df = pd.read_parquet(EMBEDDINGS_PATH)
+    emb_orgnrs = emb_df["orgnr"].values
+    emb_cols = [c for c in emb_df.columns if c.startswith("emb_")]
+    mat = emb_df[emb_cols].values.astype(np.float32)
+    del emb_df
+    n_emb = mat.shape[0]
+    progress(f"Embeddings: {n_emb:,} x {mat.shape[1]}")
+
+    # L2-normalize
+    progress("L2-normalizing embeddings")
+    norms = np.linalg.norm(mat, axis=1, keepdims=True)
+    norms[norms < 1e-10] = 1.0
+    emb_normed = mat / norms
+    del mat, norms
 
     # Build embedding orgnr -> row lookup
     emb_orgnr_to_row = {str(o): i for i, o in enumerate(emb_orgnrs)}
@@ -77,7 +93,7 @@ def main() -> None:
     # Reindex embedding matrix to payload order
     progress("Reindexing embedding matrix to payload order")
     emb_payload_order = emb_normed[payload_to_emb].astype(np.float32)
-    del emb_normed  # free ~1.3 GB
+    del emb_normed
 
     # Preallocate output
     all_indices = np.zeros((n_payload, K), dtype=np.int32)
