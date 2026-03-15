@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Semantic Capability Map — Norwegian Firms</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; height: 100vh; overflow: hidden; }
+
+  #app { display: grid; grid-template-rows: 52px 1fr 44px; height: 100vh; overflow: visible; }
+
+  /* Header */
+  #header { display: flex; align-items: center; justify-content: space-between; padding: 0 16px; background: #16213e; border-bottom: 1px solid #0f3460; }
+  #header h1 { font-size: 16px; font-weight: 600; color: #e0e0e0; }
+  #search-container { position: relative; }
+  #search-input { width: 320px; padding: 6px 12px; border: 1px solid #0f3460; border-radius: 4px; background: #1a1a2e; color: #e0e0e0; font-size: 13px; outline: none; }
+  #search-input:focus { border-color: #4cc9f0; }
+  #search-input::placeholder { color: #666; }
+  #search-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #16213e; border: 1px solid #0f3460; border-top: none; border-radius: 0 0 4px 4px; max-height: 400px; overflow-y: auto; z-index: 1000; display: none; }
+  .search-item { padding: 8px 12px; cursor: pointer; font-size: 12px; border-bottom: 1px solid #0f3460; }
+  .search-item:hover { background: #0f3460; }
+  .search-item .si-name { font-weight: 600; color: #e0e0e0; }
+  .search-item .si-meta { color: #888; font-size: 11px; margin-top: 2px; }
+
+  /* Main area */
+  #main { display: grid; grid-template-columns: 1fr 340px; overflow: hidden; }
+
+  /* Plot */
+  #plot-container { position: relative; overflow: hidden; }
+  #plot { width: 100%; height: 100%; }
+
+  /* Custom tooltip */
+  #tooltip { position: absolute; pointer-events: none; background: rgba(22,33,62,0.95); border: 1px solid #4cc9f0; border-radius: 6px; padding: 10px 12px; font-size: 12px; max-width: 360px; z-index: 500; display: none; line-height: 1.4; }
+  #tooltip .tt-name { font-weight: 700; color: #4cc9f0; margin-bottom: 4px; }
+  #tooltip .tt-text { color: #ccc; margin-bottom: 4px; font-style: italic; }
+  #tooltip .tt-meta { color: #999; font-size: 11px; }
+
+  /* Detail panel */
+  #detail-panel { background: #16213e; border-left: 1px solid #0f3460; padding: 16px; overflow-y: auto; }
+  #detail-panel h2 { font-size: 14px; color: #4cc9f0; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+  #detail-empty { color: #666; font-style: italic; font-size: 13px; }
+  #detail-content { display: none; }
+  .detail-field { margin-bottom: 12px; }
+  .detail-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+  .detail-value { font-size: 13px; color: #e0e0e0; word-wrap: break-word; }
+  .detail-value.name { font-size: 16px; font-weight: 700; color: #4cc9f0; }
+  .detail-value.purpose { font-style: italic; line-height: 1.5; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
+
+  /* Nearest neighbors */
+  #neighbors-section { margin-top: 16px; border-top: 1px solid #0f3460; padding-top: 12px; display: none; }
+  #neighbors-section h3 { font-size: 12px; color: #4cc9f0; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  #neighbors-loading { color: #666; font-size: 12px; font-style: italic; }
+  .neighbor-item { padding: 8px; margin-bottom: 4px; background: #1a1a2e; border-radius: 4px; cursor: pointer; border: 1px solid transparent; transition: border-color 0.15s; }
+  .neighbor-item:hover { border-color: #4cc9f0; }
+  .nb-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; }
+  .nb-rank { color: #666; font-size: 11px; min-width: 20px; }
+  .nb-name { font-weight: 600; color: #e0e0e0; font-size: 12px; flex: 1; margin: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nb-sim { font-size: 12px; font-weight: 700; font-family: monospace; white-space: nowrap; }
+  .nb-sim.high { color: #3cb44b; }
+  .nb-sim.mid { color: #ffe119; }
+  .nb-sim.low { color: #e6194b; }
+  .nb-meta { color: #888; font-size: 11px; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Legend bar */
+  #legend-bar { display: flex; align-items: center; gap: 4px; padding: 0 12px; background: #16213e; border-top: 1px solid #0f3460; overflow: visible; flex-wrap: nowrap; position: relative; z-index: 700; }
+  .legend-btn { position: relative; padding: 3px 8px; border: 1px solid transparent; border-radius: 3px; font-size: 11px; cursor: pointer; white-space: nowrap; color: #fff; opacity: 1; transition: opacity 0.15s; }
+  .legend-btn.off { opacity: 0.25; }
+  .legend-btn .legend-tip { display: none; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 8px; padding: 6px 12px; background: #0a0e1a; border: 1px solid #4cc9f0; border-radius: 4px; color: #e0e0e0; font-size: 12px; white-space: nowrap; pointer-events: none; z-index: 800; box-shadow: 0 -2px 12px rgba(0,0,0,0.5); }
+  .legend-btn:hover .legend-tip { display: block; }
+  .legend-ctrl { padding: 3px 8px; border: 1px solid #0f3460; border-radius: 3px; font-size: 10px; cursor: pointer; background: transparent; color: #888; white-space: nowrap; }
+  .legend-ctrl:hover { border-color: #4cc9f0; color: #e0e0e0; }
+
+  /* NACE code filter */
+  .legend-sep { width: 1px; height: 22px; background: #0f3460; margin: 0 4px; flex-shrink: 0; }
+  #nace-filter-container { position: relative; flex-shrink: 0; display: flex; align-items: center; gap: 4px; }
+  #nace-filter-input { width: 180px; padding: 4px 8px; border: 1px solid #0f3460; border-radius: 3px; background: #1a1a2e; color: #e0e0e0; font-size: 11px; outline: none; }
+  #nace-filter-input:focus { border-color: #4cc9f0; }
+  #nace-filter-input::placeholder { color: #555; }
+  #nace-filter-dropdown { position: absolute; bottom: 100%; left: 0; width: 360px; margin-bottom: 8px; background: #0a0e1a; border: 1px solid #0f3460; border-radius: 4px; max-height: 320px; overflow-y: auto; z-index: 1000; display: none; box-shadow: 0 -4px 16px rgba(0,0,0,0.6); }
+  .nace-filter-item { padding: 6px 10px; cursor: pointer; font-size: 11px; border-bottom: 1px solid #0f3460; display: flex; justify-content: space-between; align-items: baseline; }
+  .nace-filter-item:hover { background: #0f3460; }
+  .nace-filter-item:last-child { border-bottom: none; }
+  .nfi-code { font-weight: 700; color: #4cc9f0; min-width: 55px; }
+  .nfi-desc { color: #ccc; flex: 1; margin: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nfi-count { color: #888; font-size: 10px; white-space: nowrap; }
+  #nace-filter-clear { padding: 3px 8px; border: 1px solid #0f3460; border-radius: 3px; font-size: 10px; cursor: pointer; background: transparent; color: #888; display: none; }
+  #nace-filter-clear:hover { border-color: #e6194b; color: #e6194b; }
+  #nace-filter-active { font-size: 10px; color: #4cc9f0; display: none; white-space: nowrap; }
+
+  /* Loading overlay */
+  #loading { position: fixed; inset: 0; background: #1a1a2e; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; }
+  #loading h2 { color: #4cc9f0; margin-bottom: 12px; }
+  #loading p { color: #888; font-size: 14px; }
+  #loading.hidden { display: none; }
+  .loading-bar { width: 300px; height: 4px; background: #0f3460; border-radius: 2px; margin-top: 16px; overflow: hidden; }
+  .loading-bar-fill { height: 100%; background: #4cc9f0; border-radius: 2px; transition: width 0.3s; width: 0%; }
+</style>
+</head>
+<body>
+<div id="loading">
+  <h2>Semantic Capability Map</h2>
+  <p id="loading-msg">Loading data...</p>
+  <div class="loading-bar"><div class="loading-bar-fill" id="loading-bar-fill"></div></div>
+</div>
+
+<div id="app">
+  <!-- Header -->
+  <div id="header">
+    <h1>Semantic Capability Map</h1>
+    <div id="search-container">
+      <input id="search-input" type="text" placeholder="Search companies..." autocomplete="off">
+      <div id="search-dropdown"></div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div id="main">
+    <div id="plot-container">
+      <div id="plot"></div>
+      <div id="tooltip">
+        <div class="tt-name"></div>
+        <div class="tt-text"></div>
+        <div class="tt-meta"></div>
+      </div>
+    </div>
+    <div id="detail-panel">
+      <h2>Firm Details</h2>
+      <div id="detail-empty">Click a point or search for a company to see details.</div>
+      <div id="detail-content">
+        <div class="detail-field"><div class="detail-label">Name</div><div class="detail-value name" id="d-name"></div></div>
+        <div class="detail-field"><div class="detail-label">Orgnr</div><div class="detail-value" id="d-orgnr"></div></div>
+        <div class="detail-field"><div class="detail-label">Purpose Text</div><div class="detail-value purpose" id="d-purpose"></div></div>
+        <div class="detail-field"><div class="detail-label">NACE</div><div class="detail-value" id="d-nace"></div></div>
+        <div class="detail-field"><div class="detail-label">Municipality</div><div class="detail-value" id="d-municipality"></div></div>
+        <div class="detail-field"><div class="detail-label">Org. Form</div><div class="detail-value" id="d-orgform"></div></div>
+        <div class="detail-field"><div class="detail-label">Employees</div><div class="detail-value" id="d-employees"></div></div>
+        <div class="detail-field"><div class="detail-label">Founded</div><div class="detail-value" id="d-founded"></div></div>
+        <div class="detail-field"><div class="detail-label">NACE Section</div><div class="detail-value" id="d-section"></div></div>
+      </div>
+      <div id="neighbors-section">
+        <h3>Nearest Semantic Peers (768-dim cosine)</h3>
+        <div id="neighbors-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div id="legend-bar">
+    <!-- Section buttons injected by JS -->
+  </div>
+</div>
+
+<script>
+// ==========================================================================
+// State
+// ==========================================================================
+let DATA = null;      // raw columnar arrays
+let STORE = null;     // same ref
+let NEIGHBORS = null; // precomputed neighbors: {k, n, data: [[idx,sim,...], ...]}
+let NAME_LOWER = [];  // pre-lowercased names for search
+let sectionToTraceIdx = {};
+let sectionColors = {};
+let sectionVisible = {};
+let highlightTraceIdx = -1;
+let naceFilterTraceIdx = -1;
+let ORGNR_TO_IDX = {};
+let NACE_INDEX = [];
+let naceFilterActive = false;
+
+const PALETTE = [
+  '#e6194b','#3cb44b','#4363d8','#f58231','#911eb4',
+  '#42d4f4','#f032e6','#bfef45','#fabed4','#469990',
+  '#dcbeff','#9A6324','#fffac8','#800000','#aaffc3',
+  '#808000','#ffd8b1','#000075','#a9a9a9','#e6beff',
+  '#ffe119','#00cccc','#ff6666',
+];
+
+// ==========================================================================
+// Gzip fetch helper (GitHub Pages serves raw .gz — decompress client-side)
+// ==========================================================================
+async function fetchGzJson(url, label) {
+  const loadMsg = document.getElementById('loading-msg');
+  const barFill = document.getElementById('loading-bar-fill');
+
+  loadMsg.textContent = `Fetching ${label}...`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Failed to fetch ${url}: ${resp.status}`);
+
+  const contentLength = resp.headers.get('Content-Length');
+  const total = contentLength ? parseInt(contentLength, 10) : 0;
+
+  // Read stream with progress
+  const reader = resp.body.getReader();
+  const chunks = [];
+  let loaded = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.length;
+    if (total > 0) {
+      barFill.style.width = Math.round((loaded / total) * 100) + '%';
+    }
+  }
+
+  // Combine chunks
+  const combined = new Uint8Array(loaded);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  // Decompress gzip
+  loadMsg.textContent = `Decompressing ${label}...`;
+  barFill.style.width = '100%';
+  const ds = new DecompressionStream('gzip');
+  const writer = ds.writable.getWriter();
+  writer.write(combined);
+  writer.close();
+
+  const decompressedStream = ds.readable;
+  const decompressedReader = decompressedStream.getReader();
+  const textChunks = [];
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await decompressedReader.read();
+    if (done) break;
+    textChunks.push(decoder.decode(value, { stream: true }));
+  }
+  textChunks.push(decoder.decode());
+
+  loadMsg.textContent = `Parsing ${label}...`;
+  return JSON.parse(textChunks.join(''));
+}
+
+// ==========================================================================
+// Init
+// ==========================================================================
+async function init() {
+  const loadMsg = document.getElementById('loading-msg');
+  const barFill = document.getElementById('loading-bar-fill');
+
+  // Load payload (firms + UMAP coords)
+  DATA = await fetchGzJson('data/payload.json.gz', 'firm data');
+  STORE = DATA;
+  loadMsg.textContent = `Loaded ${DATA.n.toLocaleString()} firms. Loading neighbors...`;
+  barFill.style.width = '0%';
+
+  // Load precomputed neighbors
+  NEIGHBORS = await fetchGzJson('data/neighbors.json.gz', 'neighbor data');
+  loadMsg.textContent = `Building plot...`;
+
+  // Pre-lowercase names for search
+  NAME_LOWER = DATA.name.map(n => (n || '').toLowerCase());
+
+  // Build orgnr -> index lookup
+  for (let i = 0; i < DATA.n; i++) {
+    ORGNR_TO_IDX[DATA.orgnr[i]] = i;
+  }
+
+  // Build NACE code index
+  const naceCounts = {};
+  const naceDescs = {};
+  for (let i = 0; i < DATA.n; i++) {
+    const code = DATA.nace1[i] || '';
+    if (!code) continue;
+    naceCounts[code] = (naceCounts[code] || 0) + 1;
+    if (!naceDescs[code]) naceDescs[code] = DATA.nace1_desc[i] || '';
+  }
+  NACE_INDEX = Object.keys(naceCounts).sort().map(code => ({
+    code, desc: naceDescs[code], count: naceCounts[code],
+  }));
+
+  // Build plot
+  await buildPlot();
+  buildLegend();
+  wireSearch();
+
+  document.getElementById('loading').classList.add('hidden');
+}
+
+// ==========================================================================
+// Plot
+// ==========================================================================
+async function buildPlot() {
+  const plotDiv = document.getElementById('plot');
+
+  const sectionIndices = {};
+  for (let i = 0; i < DATA.n; i++) {
+    const sec = DATA.nace_section[i] || '?';
+    if (!sectionIndices[sec]) sectionIndices[sec] = [];
+    sectionIndices[sec].push(i);
+  }
+
+  const sections = Object.keys(sectionIndices).sort();
+  const traces = [];
+
+  sections.forEach((sec, si) => {
+    const indices = sectionIndices[sec];
+    const color = PALETTE[si % PALETTE.length];
+    sectionColors[sec] = color;
+    sectionVisible[sec] = true;
+    sectionToTraceIdx[sec] = si;
+
+    const secName = DATA.section_names[sec] || 'Unknown';
+    traces.push({
+      x: indices.map(i => DATA.umap_x[i]),
+      y: indices.map(i => DATA.umap_y[i]),
+      customdata: indices,
+      mode: 'markers',
+      type: 'scattergl',
+      name: `${sec} — ${secName}`,
+      marker: { size: 2, color: color, opacity: 0.4 },
+      hoverinfo: 'none',
+    });
+  });
+
+  highlightTraceIdx = traces.length;
+  traces.push({
+    x: [], y: [],
+    customdata: [],
+    mode: 'markers',
+    type: 'scattergl',
+    name: 'Selected',
+    marker: { size: 14, color: '#ffe119', opacity: 1, line: { color: '#000', width: 2 } },
+    hoverinfo: 'none',
+    showlegend: false,
+  });
+
+  naceFilterTraceIdx = traces.length;
+  traces.push({
+    x: [], y: [],
+    customdata: [],
+    mode: 'markers',
+    type: 'scattergl',
+    name: 'NACE Filter',
+    marker: { size: 3, color: [], opacity: 0.7 },
+    hoverinfo: 'none',
+    showlegend: false,
+    visible: false,
+  });
+
+  const layout = {
+    paper_bgcolor: '#1a1a2e',
+    plot_bgcolor: '#1a1a2e',
+    margin: { l: 40, r: 10, t: 10, b: 30 },
+    xaxis: { showgrid: false, zeroline: false, showticklabels: false, title: '' },
+    yaxis: { showgrid: false, zeroline: false, showticklabels: false, title: '' },
+    showlegend: false,
+    hovermode: 'closest',
+    dragmode: 'pan',
+  };
+
+  const config = {
+    scrollZoom: true,
+    displayModeBar: true,
+    modeBarButtonsToRemove: ['select2d', 'lasso2d', 'autoScale2d'],
+    responsive: true,
+  };
+
+  await Plotly.newPlot(plotDiv, traces, layout, config);
+
+  // Custom hover
+  const tooltip = document.getElementById('tooltip');
+  const plotContainer = document.getElementById('plot-container');
+
+  plotDiv.on('plotly_hover', function(ev) {
+    if (!ev.points || ev.points.length === 0) return;
+    const pt = ev.points[0];
+    const idx = pt.customdata;
+    if (idx === undefined || idx === null) return;
+
+    const name = STORE.name[idx] || 'N/A';
+    const text = (STORE.purpose_text[idx] || '').substring(0, 120);
+    const nace = STORE.nace1[idx] || '?';
+    const naceDesc = STORE.nace1_desc[idx] || '';
+    const muni = STORE.municipality[idx] || '';
+
+    tooltip.querySelector('.tt-name').textContent = name;
+    tooltip.querySelector('.tt-text').textContent = text ? text + (text.length >= 120 ? '...' : '') : '';
+    tooltip.querySelector('.tt-meta').textContent = `NACE ${nace} — ${naceDesc} | ${muni}`;
+
+    const rect = plotContainer.getBoundingClientRect();
+    let left = (ev.event.clientX - rect.left) + 16;
+    let top = (ev.event.clientY - rect.top) - 10;
+    if (left + 360 > rect.width) left = left - 376;
+    if (top + 100 > rect.height) top = Math.max(10, top - 80);
+
+    tooltip.style.left = left + 'px';
+    tooltip.style.top = top + 'px';
+    tooltip.style.display = 'block';
+  });
+
+  plotDiv.on('plotly_unhover', function() {
+    tooltip.style.display = 'none';
+  });
+
+  plotDiv.on('plotly_click', function(ev) {
+    if (!ev.points || ev.points.length === 0) return;
+    const idx = ev.points[0].customdata;
+    if (idx === undefined || idx === null) return;
+    showDetail(idx);
+    highlightPoint(idx);
+  });
+}
+
+// ==========================================================================
+// Detail panel
+// ==========================================================================
+function showDetail(idx) {
+  document.getElementById('detail-empty').style.display = 'none';
+  document.getElementById('detail-content').style.display = 'block';
+
+  document.getElementById('d-name').textContent = STORE.name[idx] || 'N/A';
+  document.getElementById('d-orgnr').textContent = STORE.orgnr[idx] || '';
+  document.getElementById('d-purpose').textContent = STORE.purpose_text[idx] || '';
+  document.getElementById('d-nace').textContent = `${STORE.nace1[idx] || '?'} — ${STORE.nace1_desc[idx] || ''}`;
+  document.getElementById('d-municipality').textContent = STORE.municipality[idx] || '';
+  document.getElementById('d-orgform').textContent = STORE.orgform[idx] || '';
+
+  const emp = STORE.employees[idx];
+  document.getElementById('d-employees').textContent = emp > 0 ? emp.toLocaleString() : 'N/A';
+
+  const yr = STORE.founded_year[idx];
+  document.getElementById('d-founded').textContent = yr > 0 ? yr : 'N/A';
+
+  const sec = STORE.nace_section[idx] || '?';
+  document.getElementById('d-section').textContent = `${sec} — ${STORE.nace_section_name[idx] || ''}`;
+
+  // Show precomputed neighbors
+  showNeighbors(idx);
+}
+
+// ==========================================================================
+// Nearest neighbors (precomputed — instant lookup)
+// ==========================================================================
+function showNeighbors(idx) {
+  const section = document.getElementById('neighbors-section');
+  const list = document.getElementById('neighbors-list');
+
+  section.style.display = 'block';
+
+  if (!NEIGHBORS || idx >= NEIGHBORS.n) {
+    list.innerHTML = '<div style="color:#666;font-size:12px;">No neighbor data available.</div>';
+    return;
+  }
+
+  const row = NEIGHBORS.data[idx]; // [idx, sim, idx, sim, ...]
+  const k = NEIGHBORS.k;
+
+  if (!row || row.length === 0) {
+    list.innerHTML = '<div style="color:#666;font-size:12px;">No neighbors found.</div>';
+    return;
+  }
+
+  // Show top 10 (data may have more precomputed)
+  const showK = Math.min(10, k);
+  let html = '';
+
+  for (let r = 0; r < showK; r++) {
+    const nbIdx = row[r * 2];
+    const sim = row[r * 2 + 1];
+    if (nbIdx === undefined) break;
+
+    const name = STORE.name[nbIdx] || 'N/A';
+    const nace = STORE.nace1[nbIdx] || '?';
+    const muni = STORE.municipality[nbIdx] || '';
+    const simClass = sim >= 0.85 ? 'high' : sim >= 0.65 ? 'mid' : 'low';
+
+    html += `<div class="neighbor-item" data-idx="${nbIdx}">
+      <div class="nb-header">
+        <span class="nb-rank">${r + 1}.</span>
+        <span class="nb-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+        <span class="nb-sim ${simClass}">${sim.toFixed(4)}</span>
+      </div>
+      <div class="nb-meta">NACE ${escapeHtml(nace)} | ${escapeHtml(muni)}</div>
+    </div>`;
+  }
+
+  list.innerHTML = html;
+
+  // Click neighbor -> navigate
+  list.querySelectorAll('.neighbor-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const nbIdx = parseInt(item.dataset.idx, 10);
+      if (!isNaN(nbIdx)) navigateToFirm(nbIdx);
+    });
+  });
+}
+
+// ==========================================================================
+// Highlight
+// ==========================================================================
+function highlightPoint(idx) {
+  const plotDiv = document.getElementById('plot');
+  Plotly.restyle(plotDiv, {
+    x: [[DATA.umap_x[idx]]],
+    y: [[DATA.umap_y[idx]]],
+    customdata: [[idx]],
+  }, [highlightTraceIdx]);
+}
+
+function navigateToFirm(idx) {
+  showDetail(idx);
+  highlightPoint(idx);
+
+  const cx = DATA.umap_x[idx];
+  const cy = DATA.umap_y[idx];
+  const span = 3;
+  Plotly.relayout(document.getElementById('plot'), {
+    'xaxis.range': [cx - span, cx + span],
+    'yaxis.range': [cy - span, cy + span],
+  });
+}
+
+// ==========================================================================
+// Search
+// ==========================================================================
+function wireSearch() {
+  const input = document.getElementById('search-input');
+  const dropdown = document.getElementById('search-dropdown');
+  let debounceTimer = null;
+
+  input.addEventListener('input', function() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      const query = input.value.trim().toLowerCase();
+      if (query.length < 2) {
+        dropdown.style.display = 'none';
+        return;
+      }
+      const results = [];
+      for (let i = 0; i < DATA.n && results.length < 20; i++) {
+        if (NAME_LOWER[i].includes(query)) {
+          results.push(i);
+        }
+      }
+      if (results.length === 0) {
+        dropdown.innerHTML = '<div class="search-item"><span class="si-name">No results</span></div>';
+      } else {
+        dropdown.innerHTML = results.map(idx => {
+          const name = STORE.name[idx] || 'N/A';
+          const nace = STORE.nace1[idx] || '?';
+          const muni = STORE.municipality[idx] || '';
+          return `<div class="search-item" data-idx="${idx}">
+            <div class="si-name">${escapeHtml(name)}</div>
+            <div class="si-meta">NACE ${escapeHtml(nace)} | ${escapeHtml(muni)} | ${STORE.orgnr[idx]}</div>
+          </div>`;
+        }).join('');
+      }
+      dropdown.style.display = 'block';
+    }, 300);
+  });
+
+  dropdown.addEventListener('click', function(ev) {
+    const item = ev.target.closest('.search-item');
+    if (!item) return;
+    const idx = parseInt(item.dataset.idx, 10);
+    if (isNaN(idx)) return;
+    navigateToFirm(idx);
+    dropdown.style.display = 'none';
+    input.value = STORE.name[idx] || '';
+  });
+
+  document.addEventListener('click', function(ev) {
+    if (!ev.target.closest('#search-container')) {
+      dropdown.style.display = 'none';
+    }
+  });
+
+  input.addEventListener('keydown', function(ev) {
+    if (ev.key === 'Escape') {
+      dropdown.style.display = 'none';
+      input.blur();
+    }
+  });
+}
+
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+// ==========================================================================
+// Legend
+// ==========================================================================
+function buildLegend() {
+  const bar = document.getElementById('legend-bar');
+  bar.innerHTML = '';
+
+  const allOn = document.createElement('button');
+  allOn.className = 'legend-ctrl';
+  allOn.textContent = 'All on';
+  allOn.onclick = () => toggleAll(true);
+  bar.appendChild(allOn);
+
+  const allOff = document.createElement('button');
+  allOff.className = 'legend-ctrl';
+  allOff.textContent = 'All off';
+  allOff.onclick = () => toggleAll(false);
+  bar.appendChild(allOff);
+
+  const sections = Object.keys(sectionToTraceIdx).sort();
+  sections.forEach(sec => {
+    const btn = document.createElement('button');
+    btn.className = 'legend-btn';
+    btn.style.backgroundColor = sectionColors[sec];
+    btn.dataset.section = sec;
+    btn.onclick = () => toggleSection(sec, btn);
+
+    btn.appendChild(document.createTextNode(sec));
+
+    const tip = document.createElement('span');
+    tip.className = 'legend-tip';
+    tip.textContent = `${sec} — ${DATA.section_names[sec] || 'Unknown'}`;
+    btn.appendChild(tip);
+
+    bar.appendChild(btn);
+  });
+
+  const sep = document.createElement('div');
+  sep.className = 'legend-sep';
+  bar.appendChild(sep);
+
+  const filterContainer = document.createElement('div');
+  filterContainer.id = 'nace-filter-container';
+  filterContainer.innerHTML = `
+    <input id="nace-filter-input" type="text" placeholder="Filter by NACE code..." autocomplete="off">
+    <span id="nace-filter-active"></span>
+    <button id="nace-filter-clear">Clear</button>
+    <div id="nace-filter-dropdown"></div>
+  `;
+  bar.appendChild(filterContainer);
+
+  wireNaceFilter();
+}
+
+function toggleSection(sec, btn) {
+  if (naceFilterActive) return;
+  const plotDiv = document.getElementById('plot');
+  const traceIdx = sectionToTraceIdx[sec];
+  const visible = !sectionVisible[sec];
+  sectionVisible[sec] = visible;
+  btn.classList.toggle('off', !visible);
+  Plotly.restyle(plotDiv, { visible: visible }, [traceIdx]);
+}
+
+function toggleAll(on) {
+  if (naceFilterActive) { clearNaceFilter(); return; }
+  const plotDiv = document.getElementById('plot');
+  const sections = Object.keys(sectionToTraceIdx).sort();
+  const indices = sections.map(s => sectionToTraceIdx[s]);
+  sections.forEach(sec => { sectionVisible[sec] = on; });
+  document.querySelectorAll('.legend-btn').forEach(btn => {
+    btn.classList.toggle('off', !on);
+  });
+  Plotly.restyle(plotDiv, { visible: on }, indices);
+}
+
+// ==========================================================================
+// NACE code filter
+// ==========================================================================
+function wireNaceFilter() {
+  const input = document.getElementById('nace-filter-input');
+  const dropdown = document.getElementById('nace-filter-dropdown');
+  const clearBtn = document.getElementById('nace-filter-clear');
+  let debounceTimer = null;
+
+  input.addEventListener('input', function() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      const query = input.value.trim();
+      if (query.length < 2) {
+        dropdown.style.display = 'none';
+        return;
+      }
+      const qLower = query.toLowerCase();
+      const matches = NACE_INDEX.filter(e =>
+        e.code.startsWith(query) || e.desc.toLowerCase().includes(qLower)
+      ).slice(0, 25);
+
+      let prefixTotal = 0;
+      for (const e of NACE_INDEX) {
+        if (e.code.startsWith(query)) prefixTotal += e.count;
+      }
+
+      let html = '';
+      if (/^\d/.test(query) && prefixTotal > 0) {
+        const prefixMatches = NACE_INDEX.filter(e => e.code.startsWith(query));
+        if (prefixMatches.length > 1) {
+          html += `<div class="nace-filter-item" data-prefix="${escapeHtml(query)}">
+            <span class="nfi-code">${escapeHtml(query)}.*</span>
+            <span class="nfi-desc">All codes starting with ${escapeHtml(query)}</span>
+            <span class="nfi-count">${prefixTotal.toLocaleString()} firms</span>
+          </div>`;
+        }
+      }
+      html += matches.map(e =>
+        `<div class="nace-filter-item" data-prefix="${escapeHtml(e.code)}">
+          <span class="nfi-code">${escapeHtml(e.code)}</span>
+          <span class="nfi-desc">${escapeHtml(e.desc)}</span>
+          <span class="nfi-count">${e.count.toLocaleString()}</span>
+        </div>`
+      ).join('');
+
+      if (!html) {
+        html = '<div class="nace-filter-item"><span class="nfi-desc">No matching NACE codes</span></div>';
+      }
+      dropdown.innerHTML = html;
+      dropdown.style.display = 'block';
+    }, 200);
+  });
+
+  dropdown.addEventListener('click', function(ev) {
+    const item = ev.target.closest('.nace-filter-item');
+    if (!item) return;
+    const prefix = item.dataset.prefix;
+    if (!prefix) return;
+    applyNaceFilter(prefix);
+    dropdown.style.display = 'none';
+    input.value = prefix;
+  });
+
+  input.addEventListener('keydown', function(ev) {
+    if (ev.key === 'Enter') {
+      const prefix = input.value.trim();
+      if (prefix.length >= 2) {
+        applyNaceFilter(prefix);
+        dropdown.style.display = 'none';
+      }
+    } else if (ev.key === 'Escape') {
+      dropdown.style.display = 'none';
+      input.blur();
+    }
+  });
+
+  clearBtn.addEventListener('click', clearNaceFilter);
+
+  document.addEventListener('click', function(ev) {
+    if (!ev.target.closest('#nace-filter-container')) {
+      dropdown.style.display = 'none';
+    }
+  });
+}
+
+function applyNaceFilter(prefix) {
+  const plotDiv = document.getElementById('plot');
+  naceFilterActive = true;
+
+  const matchIdx = [];
+  for (let i = 0; i < DATA.n; i++) {
+    if ((DATA.nace1[i] || '').startsWith(prefix)) {
+      matchIdx.push(i);
+    }
+  }
+
+  const sections = Object.keys(sectionToTraceIdx).sort();
+  const sectionTraces = sections.map(s => sectionToTraceIdx[s]);
+  Plotly.restyle(plotDiv, { 'marker.opacity': 0.03 }, sectionTraces);
+
+  const colors = matchIdx.map(i => sectionColors[DATA.nace_section[i] || '?'] || '#888');
+  Plotly.restyle(plotDiv, {
+    x: [matchIdx.map(i => DATA.umap_x[i])],
+    y: [matchIdx.map(i => DATA.umap_y[i])],
+    customdata: [matchIdx],
+    'marker.color': [colors],
+    visible: true,
+  }, [naceFilterTraceIdx]);
+
+  const activeLabel = document.getElementById('nace-filter-active');
+  activeLabel.textContent = `${matchIdx.length.toLocaleString()} firms`;
+  activeLabel.style.display = 'inline';
+  document.getElementById('nace-filter-clear').style.display = 'inline';
+  document.querySelectorAll('.legend-btn').forEach(btn => btn.classList.add('off'));
+}
+
+function clearNaceFilter() {
+  if (!naceFilterActive) return;
+  const plotDiv = document.getElementById('plot');
+  naceFilterActive = false;
+
+  const sections = Object.keys(sectionToTraceIdx).sort();
+  const sectionTraces = sections.map(s => sectionToTraceIdx[s]);
+  Plotly.restyle(plotDiv, { 'marker.opacity': 0.4 }, sectionTraces);
+
+  Plotly.restyle(plotDiv, {
+    x: [[]], y: [[]], customdata: [[]], 'marker.color': [[]], visible: false,
+  }, [naceFilterTraceIdx]);
+
+  document.querySelectorAll('.legend-btn').forEach(btn => btn.classList.remove('off'));
+
+  document.getElementById('nace-filter-active').style.display = 'none';
+  document.getElementById('nace-filter-clear').style.display = 'none';
+  document.getElementById('nace-filter-input').value = '';
+}
+
+// ==========================================================================
+// Boot
+// ==========================================================================
+init().catch(err => {
+  document.getElementById('loading-msg').textContent = 'Error: ' + err.message;
+  console.error(err);
+});
+</script>
+</body>
+</html>
